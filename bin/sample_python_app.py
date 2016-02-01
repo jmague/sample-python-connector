@@ -1,12 +1,9 @@
 import string
-import redis
 import os
 import re
 import configparser
 
 from src.stream.GnipJsonStreamClient import GnipJsonStreamClient
-from src.processor.RedisProcessor import RedisProcessor
-from src.processor.MongoProcessor import MongoProcessor
 from src.processor.BaseProcessor import BaseProcessor
 from src.utils.Envirionment import Envirionment
 
@@ -48,7 +45,7 @@ def repl():
     while not get_stopped():
         if not accepting_input():
             continue
-        cmd = raw_input('> ')
+        cmd = input('> ')
         handle_command(cmd)
 
 
@@ -71,9 +68,7 @@ def ensure_configuration_for_cmd(cmd):
 
 def commands():
     return {
-        "redis": redis_processor,
         "stdout": print_stream_processor,
-        "mongo": mongo_processor,
         "configure": configure,
         "exit": repl_exit,
         "help": print_help
@@ -86,7 +81,7 @@ def handle_unrecognized_command(cmd):
 
 
 def print_help():
-    print help_msg()
+    print (help_msg())
 
 
 def help_msg():
@@ -99,8 +94,6 @@ def help_msg():
 
     configure # Run the interactive configuration
     stdout # Run the stdout processor
-    redis # Run the Redis processor
-    mongo # Run the MongoDB processor
   """
 
 
@@ -123,13 +116,13 @@ def get_non_null_input(value):
         if not is_empty_string(input):
             ret_value = input
             break
-        print empty_prompt
+        print (empty_prompt)
     return ret_value
 
 
 def get_user_input_with_prompt(value):
     prompt = string.Template('Enter $value: ').substitute(value=value)
-    return raw_input(prompt)
+    return input(prompt)
 
 
 def get_user_input_with_default(value, default):
@@ -139,7 +132,7 @@ def get_user_input_with_default(value, default):
 
 
 def config_sections():
-    return ['redis', 'auth', 'gnacs', 'redis', 'mongo', 'stream', 'sys']
+    return ['auth', 'gnacs', 'stream', 'sys']
 
 
 def add_config_sections(config):
@@ -165,11 +158,6 @@ def configure():
     stream_url = get_non_null_input('Gnip url')
     gnip_streamname = get_non_null_input("Gnip stream name")
     gnip_log_level = get_user_input_with_prompt('log level (fatal, error, info, debug)')
-    redis_host = get_user_input_with_default('Redis hostname (defaults to 0.0.0.0)', '0.0.0.0')
-    redis_port = get_user_input_with_default('Redis port no (defaults to 6379', '6379')
-    mongo_host = get_user_input_with_default('Mongo hostname (defaults to 0.0.0.0)', '0.0.0.0')
-    mongo_port = get_user_input_with_default('Mongo port no (defaults to 27017)', '27017')
-    mongo_db = get_user_input_with_default("Mongo database name (defaults to samplePythonConnector)", "samplePythonConnector")
 
     config.set('auth', 'username', gnip_username)
     config.set('auth', 'password', gnip_password)
@@ -177,11 +165,6 @@ def configure():
     config.set('stream', 'streamname', gnip_streamname)
     config.set('stream', 'compressed', "True")
     config.set('sys', 'log_level', gnip_log_level)
-    config.set('redis', 'host', redis_host)
-    config.set('redis', 'port', redis_port)
-    config.set("mongo", 'host', mongo_host)
-    config.set("mongo", 'port', mongo_port)
-    config.set("mongo", "db", mongo_db)
 
     write_out_config(config)
     msg = string.Template("Configuration: $config").substitute(config=str(config._sections))
@@ -199,43 +182,16 @@ def write_out_config(config):
         config.write(config_file)
 
 
-def mongo_processor():
-    client = setup_client()
-    mongo_processor = MongoProcessor(client.queue(), environment())
-    run_processor(client, mongo_processor)
-    print(
-        """Mongo processor finished! Go check the
-    Mongo server 'tweets' collection to see what we brought in!"""
-    )
-
 
 def print_stream_processor():
     client = setup_client()
     processor = BaseProcessor(client.queue(), environment())
     run_processor(client, processor)
-    print "\n\n\nWhew! That was a lot of JSON!"
+    print ("\n\n\nWhew! That was a lot of JSON!")
 
 
 def environment():
     return Envirionment()
-
-
-def redis_processor():
-    client = setup_client()
-    redis_processor = RedisProcessor(client.queue(), environment())
-    flush_redis(environment().redis_host, environment().redis_port)
-    run_processor(client, redis_processor)
-
-    print("""
-    Redis processor stopped. Head over to the redis-cli to see what we got!
-
-
-    hint, run:
-    > redis-cli
-    > KEYS *    # Command to show all keys
-    > llen
-    """
-    )
 
 
 def empty_line_regex():
@@ -252,17 +208,17 @@ def run_processor(client, processor):
         )
 
         while True:
-            input = raw_input('> ')
-            if re.match(empty_line_regex(), input):
+            inpt = input('> ')
+            if re.match(empty_line_regex(), inpt):
                 set_accept_input(False)
                 break
 
-        print 'Stopping'
+        print ('Stopping')
         processor.stop()
         client.stop()
         while processor.running() or client.running():
             pass
-    except Exception, e:
+    except Exception as e:
         processor.stop()
         client.stop()
         raise e
@@ -277,20 +233,8 @@ def _stop_processor(client, processor):
 
 def setup_client():
     config = environment()
-    return GnipJsonStreamClient(
-        config.streamurl,
-        config.streamname,
-        config.username,
-        config.password,
-        config.filepath,
-        config.rollduration,
-        compressed=config.compressed
-    )
+    return GnipJsonStreamClient(config)
 
-
-def flush_redis(host, port):
-    client = redis.StrictRedis(host=host, port=port)
-    client.flushall()
 
 
 def needs_configuration():
@@ -300,5 +244,5 @@ def needs_configuration():
 ##################
 
 if __name__ == '__main__':
-    print help_msg()
+    print( help_msg())
     repl()
